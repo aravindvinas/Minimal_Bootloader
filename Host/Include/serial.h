@@ -3,7 +3,7 @@
 *            115200 bits/sec            * 
 *            PARITY ODD                 * 
 *            8 BIT MSG                  * 
-*            NO STOP BIT                * 
+*            1 STOP BIT                 * 
 *                                       * 
 ****************************************/ 
 
