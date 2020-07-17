@@ -8,7 +8,6 @@
 #include <fcntl.h>
 #include <termios.h>
 #include <errno.h>
-#include <sys/ioctl.h>
 
 #define FILE_OPEN_ERROR     0x00
 #define GET_ATTR_ERROR      0X01
