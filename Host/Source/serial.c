@@ -13,19 +13,20 @@ uint8_t serial_init(port_handle* hport, const char* port)
     hport->tty.c_cflag |= (CLOCAL | CREAD);
     hport->tty.c_cflag &= ~CBAUD;
     cfsetispeed(&(hport->tty), B115200);
+    cfsetospeed(&(hport->tty), B115200);
 
-    hport->tty.c_cflag &= ~CSIZE;
-	hport->tty.c_cflag |= CS8;
-	hport->tty.c_cflag |= (PARENB | PARODD);
-	hport->tty.c_cflag |= 0;
-	hport->tty.c_cflag &= ~CRTSCTS;
-	hport->tty.c_cflag |= HUPCL;
-	hport->tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
-	hport->tty.c_iflag |= (INPCK | ISTRIP);
-	hport->tty.c_iflag &= ~(IXON | IXOFF | IXANY);
-	hport->tty.c_oflag &= ~OPOST;
-	hport->tty.c_cc[VMIN ] = 0;
-	hport->tty.c_cc[VTIME] = 30;
+    hport->tty.c_cflag &= ~(CSIZE);
+    hport->tty.c_cflag |= (CS8);
+    hport->tty.c_cflag |= (PARENB | PARODD);
+    hport->tty.c_cflag &= ~(CSTOPB);
+    hport->tty.c_cflag &= ~(CRTSCTS);
+    hport->tty.c_cflag |= (HUPCL);
+    hport->tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+    hport->tty.c_iflag |= (INPCK | ISTRIP);
+    hport->tty.c_iflag &= ~(IXON | IXOFF | IXANY);
+    hport->tty.c_oflag &= ~(OPOST);
+    hport->tty.c_cc[VMIN ] = 0;
+    hport->tty.c_cc[VTIME] = 30;
 
     if(tcsetattr(hport->fdesc, TCSANOW, &hport->tty))
         return SET_ATTR_ERROR;
@@ -54,7 +55,7 @@ uint8_t serial_read(port_handle* hport, char* buf, int len)
 {
     int dlen = len;
     int rxlen = 0;
-    const void* buf_ptr = buf;
+    void* buf_ptr = buf;
 
     while(dlen > 0){
         rxlen = read(hport->fdesc, buf_ptr, dlen);
