@@ -3,11 +3,14 @@
 int
 main(void)
 {
-	uint8_t data[256];
-	uint8_t tx, rx;
+	uint8_t data[256], rx;
+	uint32_t crc_data;
 
+	const uint32_t addr = 0x08000800;
 	const char file[20];
 	const char port[20];
+	printf("Enter Flash base addr\n");
+	scanf("%s\n", addr);
 	printf("Enter file name\n");
 	scanf("%s\n", file);
 	printf("Enter port address\n");
@@ -16,11 +19,19 @@ main(void)
 	port_handle hport;
 
 	serial_init(&hport, port);
-	serial_send(&hport, &tx, 1);
-	serial_read(&hport, &rx, 1);
+
+	// First send the address in which the code is to be flashed along with its CRC
+	//Check for ACK 
+	//If ACK proceed with reading the file and storing it in the buffer, else resend address
+	//Check ACK else resend buffer
+
+	/*break_down(addr, data);
+	crc_data = crc(data, 4);
+	break_down(crc_data, (data + 5));
 	
-	if(rx < 0){
-		printf("Bootloader ACK failed");
+	serial_send(&hport, &data, 8);
+	if(serial_read(&hport, &rx, 1)){
+		printf("Address CRC failed");
 		exit(0);
 	}
 
@@ -28,7 +39,7 @@ main(void)
 	uint32_t data_crc = crc(data, 224);
 	break_down(data_crc, (data + 225));
 
-	serial_send(&hport, data, 256);
+	serial_send(&hport, data, 256);*/
 }
 
 void break_down(uint32_t data, uint8_t* ptr)
