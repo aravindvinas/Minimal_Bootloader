@@ -234,8 +234,8 @@ static void flash_bin(uint8_t *buf)
 
 static void jump_user(void)
 {
-  __set_MSP(flash_base);
   void (*user_reset) (void) = (void*) (flash_base + 4);
+  __set_MSP(flash_base);
   user_reset();
 }
 /* USER CODE END 4 */
