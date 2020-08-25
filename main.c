@@ -250,7 +250,7 @@ void tx_binInfo(int port, char* bin, char* flash_base)
 
 	//ACK failed
 	if(strncmp(rxBuffer, ack, 2)){
-		printf("Handshake Failed...");
+		printf("ACK Failed...");
 		printf("Exiting Program!!!");
 		exit(0);
 	}
