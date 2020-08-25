@@ -37,7 +37,7 @@
 #include <errno.h>
 
 uint32_t file_len;		//Total file length
-
+const unsigned char* ack = "\xBE\xEF";
 unsigned char txBuffer[256];	//Transfer Buffer	
 unsigned char rxBuffer[10];		//Receive Buffer	
 int port;
@@ -69,35 +69,9 @@ main(int argc, char* argv[])
 
 	tx_binInfo(port, argv[3], argv[4]);		//Send bin size and flash base addr
 	
-	
-	//left out data
-	uint32_t data_len = 0;
-	//amount of data to read
-	uint32_t data_read = 0;
-	//amount of data read
-	uint32_t read_len = 0;
-
-	//get total file length	
-	FILE* fp = fopen(argv[1], "rb");
-
-	//if file opening encounters error
-	if(errno){
-		perror("Error");
-		printf("Exiting program!\r\n");
-		exit(0);
-	}
-
-	perror("Open Status");
-
-	//Compute file length
-	fseek(fp, 0, SEEK_END);
-	file_len = ftell(fp);
-	data_len = file_len;
-	fseek(fp, 0, SEEK_SET);
-	printf("Total length of the file: %d\n", file_len);
 
 	//reading the file
-	while(data_len){
+/*	while(data_len){
 		if(data_len > 256)
 			data_read = 256;
 		else
@@ -116,6 +90,7 @@ main(int argc, char* argv[])
 	}
 
 	fclose(fp);
+*/
 	
 	return 1;
 }
@@ -169,17 +144,16 @@ void handshake(int port)
 {
 	//Handshake with STM32
 	
-	const unsigned char* ack = "\xBE\xEF";
 	
 	printf("Initiating handshake with STM32\n");
 	
 	//Sending data 0xDEAD
-	memcpy(packet, "\xDE\xAD", 2);
+	memcpy(txBuffer, "\xDE\xAD", 2);
 	write_count = write(port, txBuffer, 2);			//Handshake attempt 1
 	if(write_count < 0){							//Error in sending handshake to STM32
 		perror("Error");
 		printf("Restransmitting...");
-		write_count = write(port, packet, 2);		//Handshake attemp 2
+		write_count = write(port, txBuffer, 2);		//Handshake attemp 2
 		if(write_count < 0){
 			perror("Error in transmission");
 			printf("Exiting the program!!!");		//Error in attempt 2 handshake and exit program
@@ -216,8 +190,6 @@ void handshake(int port)
 
 void tx_binInfo(int port, char* bin, char* flash_base)
 {
-	int file_size = 0;	//Total file size
-
 	FILE* fp = fopen(bin, "rb");	//Open bin file in binary mode
 
 	if(errno){		//Error opening bin file
@@ -229,10 +201,63 @@ void tx_binInfo(int port, char* bin, char* flash_base)
 	perror("File Open Status");
 
 	fseek(fp, 0, SEEK_END);		//Compute bin file size
-	file_size = ftell(fp);
-	data_len = file_len;
+	file_len = ftell(fp);
 	fseek(fp, 0, SEEK_SET);
 	printf("Total length of the file: %d\n", file_len);
+
+	int conv_len = snprintf(NULL, 0, "{data:%d}", file_len);
+	sprintf(txBuffer, "%d", file_len);
+
+	write_count = write(port, txBuffer, conv_len);	//Writing file size
+	if(write_count < 0){	
+		perror("Error");
+		printf("Restransmitting...");
+		write_count = write(port, txBuffer, conv_len);		
+		if(write_count < 0){
+			perror("Error in transmission");
+			printf("Exiting the program!!!");	
+			exit(0);
+		}
+	}
+
+	strcpy(txBuffer, flash_base)
+	write_count = write(port, txBuffer, conv_len);	//Writing Flash Base addr
+	if(write_count < 0){	
+		perror("Error");
+		printf("Restransmitting...");
+		write_count = write(port, txBuffer, conv_len);		
+		if(write_count < 0){
+			perror("Error in transmission");
+			printf("Exiting the program!!!");	
+			exit(0);
+		}
+	}
+	
+	clock_t start =  clock();	//Start time
+	while(time_lapse(clock(), start) < 10){
+		read_count = read(port, rxBuffer, 2);
+		if(read_count)
+			break;
+	}
+
+	//Reception Timeout
+	if(!read_count){
+		perror("Error receiving handshake");
+		printf("Timeout...");
+		printf("Exiting program!!!");
+		exit(0);
+	}
+
+	//ACK failed
+	if(strncmp(rxBuffer, ack, 2)){
+		printf("Handshake Failed...");
+		printf("Exiting Program!!!");
+		exit(0);
+	}
+
+	//Transfer successful
+	printf("Bin size and Flash base addr sent\n");
+	printf("Proceeding to initiate flashing process\n");
 
 	fclose(fp);	//Close the bin file
 }
