@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include <time.h>
 #include <fcntl.h>
 #include <termios.h>
@@ -137,7 +138,7 @@ int config_port(char* str)
 	//set the attributes immediately
 	tcsetattr(port, TCSANOW, &pConfig);
 
-	return port	//return file descriptor
+	return port;	//return file descriptor
 }
 
 void handshake(int port)
@@ -220,7 +221,7 @@ void tx_binInfo(int port, char* bin, char* flash_base)
 		}
 	}
 
-	strcpy(txBuffer, flash_base)
+	strcpy(txBuffer, flash_base);
 	write_count = write(port, txBuffer, conv_len);	//Writing Flash Base addr
 	if(write_count < 0){	
 		perror("Error");
