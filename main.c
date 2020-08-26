@@ -52,11 +52,17 @@ int time_lapse(clock_t end, clock_t start);	//Calculate time between Start and E
 
 //argv[1] is binary file
 //argv[2] is serial port addr
-//argv[3] is Binary file name
-//argv[4] is Flash base addr
+//argv[3] is Flash base addr
 int 
 main(int argc, char* argv[])
 {
+
+	if(argc < 4){
+		printf("Insufficient Arguments\n");
+		printf("Exiting Program\n");
+		exit(0);
+	}
+	
 	printf("*************************\n");
 	printf("*                       *\n");
 	printf("*     Flash Loader      *\n");
@@ -68,7 +74,7 @@ main(int argc, char* argv[])
 
 	handshake(port);		//Handshake with STM32
 
-	tx_binInfo(port, argv[3], argv[4]);		//Send bin size and flash base addr
+	tx_binInfo(port, argv[1], argv[3]);		//Send bin size and flash base addr
 	
 
 	//reading the file
@@ -101,8 +107,8 @@ int config_port(char* str)
 	//Open the port successfully else exit 
 	int	port = open(str, O_RDWR | O_NOCTTY, 0777);
 	if(port < 0){
-		perror("Error");
-		printf("Exiting program!!!");
+		perror("Error Opening Serial Port");
+		printf("Exiting program!!!\n");
 		exit(0);
 	}
 	printf("%s opened successfully\n", str);
