@@ -37,8 +37,15 @@
 #include <unistd.h>
 #include <errno.h>
 
+
+//Receive Status
+#define RX_TIMEOUT_ERR	0
+#define RX_ACK_FAIL	-1
+#define RX_ACK_SUCCESS	1
+
+
 uint32_t file_len;		//Total file length
-const unsigned char* ack = "\xBE\xEF";
+unsigned char* ack = "\xBE\xEF";
 unsigned char txBuffer[256];	//Transfer Buffer	
 unsigned char rxBuffer[10];		//Receive Buffer	
 int port;
@@ -48,6 +55,7 @@ int write_count = 0;		//serial write count
 int config_port(char* str);
 void handshake(int port);
 void tx_binInfo(int port, char* bin, char* flash_base);
+int rx_Status(void);
 int time_lapse(clock_t end, clock_t start);	//Calculate time between Start and End
 
 //argv[1] is binary file
@@ -71,11 +79,12 @@ main(int argc, char* argv[])
 	
 	port = config_port(argv[2]);				//Configure Serial Port
 	printf("Serial configured successfully\n");
-
+	
 	handshake(port);		//Handshake with STM32
 
-	tx_binInfo(port, argv[1], argv[3]);		//Send bin size and flash base addr
+	//tx_binInfo(port, argv[1], argv[3]);		//Send bin size and flash base addr
 	
+	close(port);
 
 	//reading the file
 /*	while(data_len){
@@ -138,8 +147,8 @@ int config_port(char* str)
 	pConfig.c_iflag &= ~(ICANON | ECHO | ECHOE | ISIG);	//Non-Canonical Mode
 
 	//Min data received and maximum wait time
-	pConfig.c_cc[VMIN] = 1;		//1 byte min
-	pConfig.c_cc[VTIME] = 0;	//port timeout infinity
+	pConfig.c_cc[VMIN] = 0;		//1 byte min
+	pConfig.c_cc[VTIME] = 0;	//port timeout 0.1sec
 
 	//set the attributes immediately
 	tcsetattr(port, TCSANOW, &pConfig);
@@ -150,6 +159,8 @@ int config_port(char* str)
 void handshake(int port)
 {
 	//Handshake with STM32
+	
+	int rxStatus = 0;
 	
 	
 	printf("Initiating handshake with STM32\n");
@@ -168,25 +179,16 @@ void handshake(int port)
 		}
 	}
 
-	clock_t start =  clock();	//Start time
-	while(time_lapse(clock(), start) < 10){
-		read_count = read(port, rxBuffer, 2);
-		if(read_count)
-			break;
-	}
+	printf("Sent %d bytes\n", write_count);
 
-	//Reception Timeout
-	if(!read_count){
-		perror("Error receiving handshake");
-		printf("Timeout...");
-		printf("Exiting program!!!");
+	rxStatus = rx_Status();		//wait for reply from STM32
+
+	if(rxStatus == RX_TIMEOUT_ERR)
 		exit(0);
-	}
-
-	//Handshake ACK failed
-	if(strncmp(rxBuffer, ack, 2)){
-		printf("Handshake Failed...");
-		printf("Exiting Program!!!");
+	
+	if(rxStatus == RX_ACK_FAIL){
+		printf("Handshake ACK failed...\n");
+		printf("Exiting Program!!!\n");
 		exit(0);
 	}
 
@@ -197,6 +199,8 @@ void handshake(int port)
 
 void tx_binInfo(int port, char* bin, char* flash_base)
 {
+	int rxStatus = 0;
+
 	FILE* fp = fopen(bin, "rb");	//Open bin file in binary mode
 
 	if(errno){		//Error opening bin file
@@ -213,7 +217,7 @@ void tx_binInfo(int port, char* bin, char* flash_base)
 	printf("Total length of the file: %d\n", file_len);
 
 	int conv_len = snprintf(NULL, 0, "{data:%d}", file_len);
-	sprintf(txBuffer, "%d", file_len);
+	sprintf((char*)txBuffer, "%d", file_len);
 
 	write_count = write(port, txBuffer, conv_len);	//Writing file size
 	if(write_count < 0){	
@@ -227,7 +231,18 @@ void tx_binInfo(int port, char* bin, char* flash_base)
 		}
 	}
 
-	strcpy(txBuffer, flash_base);
+	rxStatus = rx_Status();		//wait for reply from STM32
+
+	if(rxStatus == RX_TIMEOUT_ERR)
+		exit(0);
+
+	if(rxStatus == RX_ACK_FAIL){
+		printf("Binary Size ACK fail...\n");
+		printf("Exiting Program !!!");
+		exit(0);
+	}
+	
+	strcpy((char*)txBuffer, flash_base);
 	write_count = write(port, txBuffer, conv_len);	//Writing Flash Base addr
 	if(write_count < 0){	
 		perror("Error");
@@ -239,26 +254,15 @@ void tx_binInfo(int port, char* bin, char* flash_base)
 			exit(0);
 		}
 	}
-	
-	clock_t start =  clock();	//Start time
-	while(time_lapse(clock(), start) < 10){
-		read_count = read(port, rxBuffer, 2);
-		if(read_count)
-			break;
-	}
 
-	//Reception Timeout
-	if(!read_count){
-		perror("Error receiving handshake");
-		printf("Timeout...");
-		printf("Exiting program!!!");
+	rxStatus = rx_Status();		//wait for reply from STM32
+
+	if(rxStatus == RX_TIMEOUT_ERR)
 		exit(0);
-	}
 
-	//ACK failed
-	if(strncmp(rxBuffer, ack, 2)){
-		printf("ACK Failed...");
-		printf("Exiting Program!!!");
+	if(rxStatus == RX_ACK_FAIL){
+		printf("Flash Base ACK fail...\n");
+		printf("Exiting Program !!!");
 		exit(0);
 	}
 
@@ -267,6 +271,35 @@ void tx_binInfo(int port, char* bin, char* flash_base)
 	printf("Proceeding to initiate flashing process\n");
 
 	fclose(fp);	//Close the bin file
+}
+
+int rx_Status(void)
+{
+
+	//reset read count and flush input port buffer
+	read_count = 0;
+	tcflush(port, TCIFLUSH);
+
+	clock_t start =  clock();	//Start time
+	while(time_lapse(clock(), start) < 10){
+		read_count = read(port, rxBuffer, 2);
+		if(read_count)
+			break;
+	}
+
+	//Reception Timeout
+	if(read_count < 1){
+		printf("Timeout...\n");
+		printf("Exiting program!!!\n");
+		return RX_TIMEOUT_ERR;
+	}
+
+	//Handshake ACK failed
+	if(strncmp((char*)rxBuffer, (char*)ack, 2)){
+		return RX_ACK_FAIL;
+	}
+
+	return RX_ACK_SUCCESS;
 }
 
 int time_lapse(clock_t end, clock_t start)
