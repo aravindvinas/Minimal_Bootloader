@@ -1,3 +1,106 @@
+/*
+ *							BOOTLOADER PROTOCOL
+ *
+ * Handshake with STM32:
+ *			Send 0xdead and receive 0xbeef
+ *			Receive timeout 10sec; resend three times; exit(0)
+ *
+ * Binary Size and Flash base addr:
+ *		Send binary size and receive ack (0xbeef)
+ *		Receive timeout 10sec; resend three times; exit(0)
+ *
+ * Initiate Tx signal:
+ *		Receive ack(0xbeef) 
+ *		Receive timeout 10sec; No resend; exit(0)
+ *
+ * Send 248 bytes of hex + 1 byte CRC:
+ *		Receive ACK for CRC
+ *			Receive timeout 10sec; resend 3 times; exit(0)
+ *		Flash write ACK
+ *			Receive timeout 10sec; no resend; exit(0)
+ *
+ * Finish transmitting binary
+ *
+ * Send signal to jump user code
+ *
+ * After jump to user code close serial connection
+ * exit(0)
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+#include <time.h>
+#include <fcntl.h>
+#include <termios.h>
+#include <unistd.h>
+#include <errno.h>
+
+
+//Receive Status
+#define RX_TIMEOUT_ERR	0
+#define RX_ACK_FAIL	-1
+#define RX_ACK_SUCCESS	1
+
+
+uint32_t file_len;	//Total file length
+uint32_t data_len;	//file length to read 
+uint32_t read_len;	//file length read 
+int len_rem = 0;	//length of binary to be sent
+int file_pos = 0;	//file pos to read from
+uint8_t crc_val = 0xFF;	//binary file CRC checksum
+uint8_t poly = 0xB7	//STM32 CRC polynomial
+unsigned char* ack = "\xBE\xEF";	//ACK string
+unsigned char txBuffer[256]; //Transfer Buffer	
+unsigned char rxBuffer[10];	//Receive Buffer	
+int port;	//Serial port file descriptor
+int read_count = 0;	//serial read count
+int write_count = 0;	//serial write count
+
+int config_port(char* str);
+void handshake(int port);
+void tx_binInfo(int port, char* bin, char* flash_base);
+void file_send(int port, char* bin);
+int rx_Status(void);
+uint8_t crc(unsigned char* data, int len);
+int time_lapse(clock_t end, clock_t start);	//Calculate time between Start and End
+
+//argv[1] is binary file
+//argv[2] is serial port addr
+//argv[3] is Flash base addr
+int 
+main(int argc, char* argv[])
+{
+
+	if(argc < 4){
+		printf("Insufficient Arguments\n");
+		printf("Exiting Program\n");
+		exit(0);
+	}
+	
+	printf("*************************\n");
+	printf("*                       *\n");
+	printf("*     Flash Loader      *\n");
+	printf("*                       *\n");
+	printf("*************************\n");
+	
+	port = config_port(argv[2]);	//Configure Serial Port
+	printf("Serial configured successfully\n");
+	
+	handshake(port);	//Handshake with STM32
+
+	tx_binInfo(port, argv[1], argv[3]);	//Send bin size and flash base addr
+
+	clock_t start = clock();
+	while(len_rem){
+		//time limit 15 secs
+		if(clock() - start < 15){
+			printf("Binary transmission failed\n");
+		}	break;
+
+		if(file_send(port, argv[1]) == RX_ACK_FAIL) 
+			printf("CRC fail....resending again\n");
 	}
 
 	tcflush(port, TCIOFLUSH);
@@ -98,9 +201,7 @@ void tx_binInfo(int port, char* bin, char* flash_base)
 {
 	int rxStatus = 0;
 
-	/***Sending Bin file size***/
-
-	/*FILE* fp = fopen(bin, "rb");	//Open bin file in binary mode
+	FILE* fp = fopen(bin, "rb");	//Open bin file in binary mode
 
 	if(errno){	//Error opening bin file
 		perror("Error");
@@ -115,7 +216,11 @@ void tx_binInfo(int port, char* bin, char* flash_base)
 	fseek(fp, 0, SEEK_SET);
 	printf("Total length of the file: %d\n", file_len);
 
-	int conv_len = snprintf(NULL, 0, "{data:%d}", file_len);
+	len_rem = file_len;
+
+	/***Sending Bin file size***/
+
+	/*int conv_len = snprintf(NULL, 0, "{data:%d}", file_len);
 	sprintf((char*)txBuffer, "%d", file_len);
 
 	write_count = 0;
@@ -186,12 +291,18 @@ void tx_binInfo(int port, char* bin, char* flash_base)
 
 int file_send(int port, char* bin)
 {
+	int rxStatus = 0;
 	FILE* fp = fopen(bin, "rb");	//Open bin file in binary mode
 
 	if(errno){		//Error opening bin file
 		perror("Error");
 		printf("Exiting program!!!\n");
 		exit(0);
+	}
+
+	for(int i=0; i<file_pos; i++)
+	{
+		fp++;
 	}
 
 	//reads 255 bytes worth of data or how much ever is remaining
@@ -207,10 +318,21 @@ int file_send(int port, char* bin)
 	crc(read_len, (int)read_len);
 	txbuffer[255] = crc_val;
 	
-	tcflush(port, TCIOFLUSH);
+	tcflush(port, TCIOFLUSH);	//flush the buffer before write and read
 	write_count = write(port, txBuffer, 256);
 
-	return rxStatus();
+	rxStatus = rxStatus();
+	
+	if(rxStatus == RX_TIMEOUT_ERR)
+		printf("Binary file send timeout\n");
+		exit(0);
+
+	if(rxStatus == RX_ACK_SUCCESS)
+		file_pos += write_count;
+		len_rem -= write_count;	
+
+
+	return rxStatus;
 }
 
 int rx_Status(void)
